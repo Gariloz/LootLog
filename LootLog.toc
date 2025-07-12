@@ -1,0 +1,25 @@
+## Interface: 30300
+## Title: Loot Log
+## Notes: Logs looted items of certain quality in raids.
+## Version: 1.4
+## SavedVariables: LootLog_minimap
+## SavedVariablesPerCharacter: LootLog_loot_index, LootLog_filter_index, LootLog_looted_items, LootLog_frame_visible, LootLog_source, LootLog_min_quality, LootLog_invertsorting, LootLog_equippable, LootLog_open_on_loot, LootLog_filter_list, LootLog_use_filter_list
+
+# Libraries
+LibDBIcon-1.0
+
+# Auxiliary
+ItemCache.lua
+ItemFrame.lua
+Button.lua
+
+# Locale
+LootLog-Locale.lua
+LootLog-Locale-ruRU.lua
+LootLog-Locale-deDE.lua
+
+# Exclusions
+LootLog_Exclusions.lua
+
+# main
+LootLog.lua
