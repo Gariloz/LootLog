@@ -18,6 +18,47 @@ local item_cache = ItemCache.new()
 local loaded_items = 0
 local is_loaded = false
 
+-- Хуки для аукционатора и TSM
+local originalGetContainerItemInfo = GetContainerItemInfo
+local originalGetItemCount = GetItemCount
+
+-- Хук для GetContainerItemInfo (используется аукционатором)
+local function HookedGetContainerItemInfo(bag, slot)
+    local texture, itemCount, locked, quality, readable, lootable, itemLink = originalGetContainerItemInfo(bag, slot)
+
+    -- Если Shift нажат, есть предмет и данные в логе
+    if IsShiftKeyDown() and itemLink and LootLog_looted_items then
+        local itemId = tonumber(string.match(itemLink, "item:(%d+)"))
+        if itemId then
+            local logInfo = LootLog_looted_items[itemId]
+            if logInfo and logInfo.amount and logInfo.amount > (itemCount or 0) then
+                return texture, logInfo.amount, locked, quality, readable, lootable, itemLink
+            end
+        end
+    end
+
+    return texture, itemCount, locked, quality, readable, lootable, itemLink
+end
+
+-- Хук для GetItemCount (используется TSM)
+local function HookedGetItemCount(itemId, includeBank)
+    local originalCount = originalGetItemCount(itemId, includeBank)
+
+    -- Если Shift нажат и есть данные в логе
+    if IsShiftKeyDown() and LootLog_looted_items then
+        local logInfo = LootLog_looted_items[itemId]
+        if logInfo and logInfo.amount and logInfo.amount > originalCount then
+            return logInfo.amount
+        end
+    end
+
+    return originalCount
+end
+
+-- Устанавливаем хуки
+GetContainerItemInfo = HookedGetContainerItemInfo
+GetItemCount = HookedGetItemCount
+
 -- toggle gui visibility
 local toggle_visibility = function()
     if loot_frame:IsVisible() then
