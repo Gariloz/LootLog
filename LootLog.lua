@@ -55,9 +55,67 @@ local function HookedGetItemCount(itemId, includeBank)
     return originalCount
 end
 
--- Устанавливаем хуки
+-- Дополнительные хуки для TSM
+local function SetupTSMHooks()
+    -- Хук для GameTooltip:SetBagItem (TSM использует для тултипов)
+    if GameTooltip and GameTooltip.SetBagItem then
+        local originalSetBagItem = GameTooltip.SetBagItem
+        GameTooltip.SetBagItem = function(self, bag, slot)
+            -- Временно изменяем GetContainerItemInfo для этого вызова
+            if IsShiftKeyDown() then
+                local originalFunc = _G.GetContainerItemInfo
+                _G.GetContainerItemInfo = HookedGetContainerItemInfo
+                local result = originalSetBagItem(self, bag, slot)
+                _G.GetContainerItemInfo = originalFunc
+                return result
+            else
+                return originalSetBagItem(self, bag, slot)
+            end
+        end
+    end
+
+    -- Хук для TSMAPI если он существует
+    if _G.TSMAPI then
+        -- Попробуем перехватить функции TSM для подсчета предметов
+        local function HookTSMFunctions()
+            -- Ищем функции TSM, которые могут использоваться для подсчета
+            if TSMAPI.GetBagIterator then
+                local originalGetBagIterator = TSMAPI.GetBagIterator
+                TSMAPI.GetBagIterator = function(...)
+                    if IsShiftKeyDown() then
+                        -- Временно заменяем GetContainerItemInfo
+                        local originalFunc = _G.GetContainerItemInfo
+                        _G.GetContainerItemInfo = HookedGetContainerItemInfo
+                        local result = {originalGetBagIterator(...)}
+                        _G.GetContainerItemInfo = originalFunc
+                        return unpack(result)
+                    else
+                        return originalGetBagIterator(...)
+                    end
+                end
+            end
+        end
+
+        -- Устанавливаем хуки TSM после небольшой задержки
+        C_Timer.After(1, HookTSMFunctions)
+    end
+end
+
+-- Устанавливаем основные хуки
 GetContainerItemInfo = HookedGetContainerItemInfo
 GetItemCount = HookedGetItemCount
+
+-- Устанавливаем дополнительные хуки для TSM
+SetupTSMHooks()
+
+-- Дополнительная установка хуков после загрузки аддонов
+local tsmHookFrame = CreateFrame("Frame")
+tsmHookFrame:RegisterEvent("ADDON_LOADED")
+tsmHookFrame:SetScript("OnEvent", function(self, event, addonName)
+    if addonName == "TradeSkillMaster" then
+        C_Timer.After(2, SetupTSMHooks)
+    end
+end)
 
 -- toggle gui visibility
 local toggle_visibility = function()
