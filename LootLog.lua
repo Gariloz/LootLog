@@ -48,6 +48,7 @@ local function HookedGetItemCount(itemId, includeBank)
     if IsShiftKeyDown() and LootLog_looted_items then
         local logInfo = LootLog_looted_items[itemId]
         if logInfo and logInfo.amount and logInfo.amount > originalCount then
+            print("LootLog: GetItemCount hook - item " .. itemId .. " changed from " .. originalCount .. " to " .. logInfo.amount)
             return logInfo.amount
         end
     end
@@ -57,47 +58,62 @@ end
 
 -- Дополнительные хуки для TSM
 local function SetupTSMHooks()
+    print("LootLog: Setting up TSM hooks...")
+
+    -- Глобальная замена GetItemCount для всех аддонов
+    if IsShiftKeyDown then
+        local originalGetItemCount = _G.GetItemCount
+        _G.GetItemCount = function(itemId, includeBank)
+            local originalCount = originalGetItemCount(itemId, includeBank)
+            if IsShiftKeyDown() and LootLog_looted_items then
+                local logInfo = LootLog_looted_items[itemId]
+                if logInfo and logInfo.amount and logInfo.amount > originalCount then
+                    print("LootLog: Global GetItemCount hook - item " .. itemId .. " changed from " .. originalCount .. " to " .. logInfo.amount)
+                    return logInfo.amount
+                end
+            end
+            return originalCount
+        end
+    end
+
     -- Хук для GameTooltip:SetBagItem (TSM использует для тултипов)
     if GameTooltip and GameTooltip.SetBagItem then
         local originalSetBagItem = GameTooltip.SetBagItem
         GameTooltip.SetBagItem = function(self, bag, slot)
-            -- Временно изменяем GetContainerItemInfo для этого вызова
-            if IsShiftKeyDown() then
-                local originalFunc = _G.GetContainerItemInfo
-                _G.GetContainerItemInfo = HookedGetContainerItemInfo
-                local result = originalSetBagItem(self, bag, slot)
-                _G.GetContainerItemInfo = originalFunc
-                return result
-            else
-                return originalSetBagItem(self, bag, slot)
+            print("LootLog: GameTooltip:SetBagItem called, Shift=" .. tostring(IsShiftKeyDown()))
+            return originalSetBagItem(self, bag, slot)
+        end
+    end
+
+    -- Попробуем найти и перехватить функции TSM
+    if _G.TSM then
+        print("LootLog: TSM found, hooking functions...")
+
+        -- Хук для модулей TSM
+        for moduleName, module in pairs(TSM) do
+            if type(module) == "table" and module.GetTooltip then
+                print("LootLog: Found TSM module with GetTooltip: " .. moduleName)
+                local originalGetTooltip = module.GetTooltip
+                module.GetTooltip = function(...)
+                    print("LootLog: TSM GetTooltip called, Shift=" .. tostring(IsShiftKeyDown()))
+                    return originalGetTooltip(...)
+                end
             end
         end
     end
 
     -- Хук для TSMAPI если он существует
     if _G.TSMAPI then
-        -- Попробуем перехватить функции TSM для подсчета предметов
-        local function HookTSMFunctions()
-            -- Ищем функции TSM, которые могут использоваться для подсчета
-            if TSMAPI.GetBagIterator then
-                local originalGetBagIterator = TSMAPI.GetBagIterator
-                TSMAPI.GetBagIterator = function(...)
-                    if IsShiftKeyDown() then
-                        -- Временно заменяем GetContainerItemInfo
-                        local originalFunc = _G.GetContainerItemInfo
-                        _G.GetContainerItemInfo = HookedGetContainerItemInfo
-                        local result = {originalGetBagIterator(...)}
-                        _G.GetContainerItemInfo = originalFunc
-                        return unpack(result)
-                    else
-                        return originalGetBagIterator(...)
-                    end
-                end
+        print("LootLog: TSMAPI found, hooking functions...")
+
+        -- Хук для GetBagIterator
+        if TSMAPI.GetBagIterator then
+            local originalGetBagIterator = TSMAPI.GetBagIterator
+            TSMAPI.GetBagIterator = function(...)
+                print("LootLog: TSMAPI.GetBagIterator called, Shift=" .. tostring(IsShiftKeyDown()))
+                return originalGetBagIterator(...)
             end
         end
-
-        -- Устанавливаем хуки TSM после небольшой задержки
-        C_Timer.After(1, HookTSMFunctions)
     end
 end
 
