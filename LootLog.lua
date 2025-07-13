@@ -16,10 +16,7 @@ local scan_frame = CreateFrame("GameTooltip", "LootLogScanTooltip", nil, "GameTo
 -- temporary storage
 local item_cache = ItemCache.new()
 
-local loaded_items = 0
 local is_loaded = false
-
--- Чистый LootLog без хуков
 
 -- toggle gui visibility
 local toggle_visibility = function()
@@ -93,19 +90,28 @@ local item_to_chat = function(item_id)
     end
 end
 
+-- Common sorting function
+local sort_items_by_index = function(items_table, invert_sort)
+    local sorted_items = {}
+    local sorted_keys = {}
+
+    for item_id, info in pairs(items_table) do
+        local index = type(info) == "table" and info.index or info
+        sorted_items[index] = item_id
+        table.insert(sorted_keys, index)
+    end
+
+    local sort_function = invert_sort and function(a, b) return a > b end or function(a, b) return a < b end
+    table.sort(sorted_keys, sort_function)
+
+    return sorted_items, sorted_keys
+end
+
 -- update shown list
 local update_list = function()
     if not is_loaded or LootLog_looted_items == nil then return end
 
-    local sorted_items = {}
-    local sorted_keys = {}
-    for item_id, info in pairs(LootLog_looted_items) do
-        sorted_items[info.index] = item_id
-        table.insert(sorted_keys, info.index)
-    end
-
-    local sort_function = LootLog_invertsorting and function(a, b) return a > b end or function(a, b) return a < b end
-    table.sort(sorted_keys, sort_function)
+    local sorted_items, sorted_keys = sort_items_by_index(LootLog_looted_items, LootLog_invertsorting)
 
     local shown_items = {}
     for _, key in ipairs(sorted_keys) do
@@ -113,17 +119,17 @@ local update_list = function()
         local item = item_cache:get(item_id)
         local info = LootLog_looted_items[item_id]
 
-        -- Обрабатываем только загруженные предметы
+        -- Process only loaded items
         if item and info then
             item.amount = info.amount or 1
 
             local discard = false
             local keep = true
 
-            -- фильтр по качеству
+            -- quality filter
             if item.quality < LootLog_min_quality then discard = true end
 
-            -- фильтр по источнику
+            -- source filter
             if LootLog_source and LootLog_source ~= 0 then
                 if LootLog_source == 1 and info.source ~= "loot" then discard = true end
                 if LootLog_source == 2 and info.source ~= "gargul" then discard = true end
@@ -154,15 +160,7 @@ end
 local update_filter = function()
     if not is_loaded or LootLog_filter_list == nil then return end
 
-    local sorted_items = {}
-    local sorted_keys = {}
-
-    for item_id, index in pairs(LootLog_filter_list) do
-        sorted_items[index] = item_id
-        table.insert(sorted_keys, index)
-    end
-
-    table.sort(sorted_keys)
+    local sorted_items, sorted_keys = sort_items_by_index(LootLog_filter_list, false)
 
     local shown_items = {}
 
@@ -171,7 +169,7 @@ local update_filter = function()
         local item = item_cache:get(item_id)
         local loot_info = LootLog_looted_items[item_id]
 
-        -- Пропускаем предметы, которые не загружены
+        -- Skip items that are not loaded
         if item and loot_info then
             item.amount = loot_info.amount or 1
             tinsert(shown_items, item)
@@ -272,7 +270,7 @@ local event_addon_loaded = function(_, _, addon)
         end
     end
 
-    -- Подсчёт количества нужных предметов для загрузки
+    -- Count items needed for loading
     local needed_items = 0
     for k in pairs(LootLog_looted_items) do
         if type(k) == "number" then
@@ -285,7 +283,7 @@ local event_addon_loaded = function(_, _, addon)
         end
     end
 
-    -- Если нет предметов для загрузки, сразу помечаем как загруженное
+    -- If no items to load, mark as loaded immediately
     if needed_items == 0 then
         is_loaded = true
         update_filter()
@@ -295,7 +293,7 @@ local event_addon_loaded = function(_, _, addon)
 
     local loaded_items = 0
 
-    -- Единая функция-обработчик завершения загрузки
+    -- Unified loading completion handler
     local onItemLoaded = function()
         loaded_items = loaded_items + 1
         if loaded_items == needed_items then
@@ -305,7 +303,7 @@ local event_addon_loaded = function(_, _, addon)
         end
     end
 
-    -- Загружаем все предметы из LootLog_looted_items
+    -- Load all items from LootLog_looted_items
     for key in pairs(LootLog_looted_items) do
         local item_id = tonumber(key)
         if item_id then
@@ -313,7 +311,7 @@ local event_addon_loaded = function(_, _, addon)
         end
     end
 
-    -- Загружаем все предметы из LootLog_filter_list
+    -- Load all items from LootLog_filter_list
 for item_id in pairs(LootLog_filter_list) do
     item_id = tonumber(item_id)
     if item_id then
@@ -409,7 +407,7 @@ end
         local function HookTSMItemCounting()
             local hooked = HookLibExtraTip()
 
-            -- Остальные хуки больше не нужны, так как LibExtraTip работает!
+            -- Other hooks are no longer needed since LibExtraTip works!
 
             if not hooked then
                 -- Retry if LibExtraTip hook failed
@@ -421,11 +419,47 @@ end
     end)
 end
 
+-- Parse item ID and quantity from text
+local parse_item_from_text = function(text)
+    local _, item_id_start = string.find(text, "|Hitem:")
+    if not item_id_start then return nil, nil end
+
+    local text_after_item = string.sub(text, item_id_start + 1)
+    local item_id_end = string.find(text_after_item, ":")
+    if not item_id_end then return nil, nil end
+
+    local item_id_str = string.sub(text_after_item, 1, item_id_end - 1)
+    local item_id = tonumber(item_id_str)
+    if not item_id then return nil, nil end
+
+    -- Parse quantity (e.g., "x2")
+    local amount = 1
+    local count_match = string.match(text, "x(%d+)")
+    if count_match then
+        amount = tonumber(count_match)
+    end
+
+    return item_id, amount
+end
+
+-- Add item to loot log
+local add_looted_item = function(item_id, amount, source)
+    if LootLog_looted_items[item_id] then
+        LootLog_looted_items[item_id].amount = (LootLog_looted_items[item_id].amount or 0) + amount
+        update_list()
+    else
+        item_cache:getAsync(item_id, function(item)
+            LootLog_looted_items[item.id] = loot_information(source, amount)
+            update_list()
+        end)
+    end
+end
+
 -- function for parsing loot messages
 local event_looted = function(_, _, text)
-    local locale = GetLocale() -- Получаем текущую локаль (например, "ruRU", "enUS")
+    local locale = GetLocale() -- Get current locale (e.g., "ruRU", "enUS")
 
-    -- Проверяем, есть ли в сообщении ключевые слова о розыгрыше
+    -- Check if message contains roll keywords
     local is_roll = false
     for _, keyword in ipairs(LootLog_Exclusions.roll_keywords[locale] or {}) do
         if string.find(text:lower(), keyword:lower()) then
@@ -434,10 +468,10 @@ local event_looted = function(_, _, text)
         end
     end
 
-    -- Если ключевые слова найдены — выходим
+    -- If roll keywords found - exit
     if is_roll then return end
 
-    -- Универсальная проверка: если в сообщении есть имя игрока и число (например, "Имя выигрывает с результатом 35")
+    -- Universal check: if message contains player name and number (e.g., "Name wins with roll 35")
     local playerName = UnitName("player")
     if playerName and string.find(text, playerName) then
         for _, pattern in ipairs(LootLog_Exclusions.roll_patterns) do
@@ -447,68 +481,18 @@ local event_looted = function(_, _, text)
         end
     end
 
-    -- Парсим ID предмета
-    local _, item_id_start = string.find(text, "|Hitem:")
-    if not item_id_start then return end
-
-    local text_after_item = string.sub(text, item_id_start + 1)
-    local item_id_end = string.find(text_after_item, ":")
-    if not item_id_end then return end
-
-    local item_id_str = string.sub(text_after_item, 1, item_id_end - 1)
-    local item_id = tonumber(item_id_str)
-    if not item_id then return end
-
-    -- Парсим количество (например, "x2")
-    local amount = 1
-    local count_match = string.match(text, "x(%d+)")
-    if count_match then
-        amount = tonumber(count_match)
-    end
-
-    -- Обновляем или создаём запись
-    if LootLog_looted_items[item_id] then
-        LootLog_looted_items[item_id].amount = (LootLog_looted_items[item_id].amount or 0) + amount
-        update_list()
-    else
-        item_cache:getAsync(item_id, function(item)
-            LootLog_looted_items[item.id] = loot_information("loot", amount)
-            update_list()
-        end)
+    local item_id, amount = parse_item_from_text(text)
+    if item_id and amount then
+        add_looted_item(item_id, amount, "loot")
     end
 end
 
 -- function for parsing chat loot messages
 local event_gargul = function(_, _, text)
     if text and string.find(text, "Gargul") and string.match(text, "%[.*%]$") then
-        -- Парсим ID предмета
-        local _, item_id_start = string.find(text, "|Hitem:")
-        if not item_id_start then return end
-
-        local text_after_item = string.sub(text, item_id_start + 1)
-        local item_id_end = string.find(text_after_item, ":")
-        if not item_id_end then return end
-
-        local item_id_str = string.sub(text_after_item, 1, item_id_end - 1)
-        local item_id = tonumber(item_id_str)
-        if not item_id then return end
-
-        -- Парсим количество
-        local amount = 1
-        local count_match = string.match(text, "x(%d+)")
-        if count_match then
-            amount = tonumber(count_match)
-        end
-
-        -- Обновляем или создаём запись
-        if LootLog_looted_items[item_id] then
-            LootLog_looted_items[item_id].amount = (LootLog_looted_items[item_id].amount or 0) + amount
-            update_list()
-        else
-            item_cache:getAsync(item_id, function(item)
-                LootLog_looted_items[item.id] = loot_information("gargul", amount)
-                update_list()
-            end)
+        local item_id, amount = parse_item_from_text(text)
+        if item_id and amount then
+            add_looted_item(item_id, amount, "gargul")
         end
     end
 end

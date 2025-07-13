@@ -2,7 +2,7 @@
 LootLog_Exclusions = {
     roll_keywords = {
         ["ruRU"] = {
-            -- Основные слова для исключения
+            -- Main words for exclusion
             "разыгрывается", "результат", "выигрывает", 
             "не откажусь", "нужно", "мне это нужно", 
             "отказывается", "отказался", "распылить", 
@@ -34,16 +34,16 @@ LootLog_Exclusions = {
         }
     },
     roll_patterns = {
-        "x%d+", -- количество (например, "x20")
-        ":%s*%d+", -- число после двоеточия (например, "Результат: 100")
-        "[%s%p][%d]+[%s%p]", -- любое число с пробелами/знаками
-        "выбирает ['\"]распылить['\"]", -- русский формат
-        "a choisi désenchanter", -- французский
-        "entschieden für zerzaubern", -- немецкий
-        "chose to disenchant", -- английский
-        "has chosen to disenchant", -- английский
-        "has selected", -- английский
-        "selected", -- английский
-        "selected for loot" -- английский
+        "x%d+", -- quantity (e.g., "x20")
+        ":%s*%d+", -- number after colon (e.g., "Result: 100")
+        "[%s%p][%d]+[%s%p]", -- any number with spaces/punctuation
+        "выбирает ['\"]распылить['\"]", -- Russian format
+        "a choisi désenchanter", -- French
+        "entschieden für zerzaubern", -- German
+        "chose to disenchant", -- English
+        "has chosen to disenchant", -- English
+        "has selected", -- English
+        "selected", -- English
+        "selected for loot" -- English
     }
 }

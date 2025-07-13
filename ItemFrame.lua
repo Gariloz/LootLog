@@ -1,14 +1,14 @@
 -- ItemFrame.lua
--- Создает фрейм для отображения предметов в LootLog
+-- Creates frame for displaying items in LootLog
 
 local ItemFrame = {}
 
--- Создает фрейм для отображения списка предметов
+-- Creates frame for displaying item list
 function CreateItemFrame(name, parent, num_item_frames, frame_width, click_callback)
-    -- Таблица для хранения кнопок предметов
+    -- Table for storing item buttons
     local tooltipButtons = setmetatable({}, {__mode = "k"})
 
-    -- Фрейм для отслеживания Shift
+    -- Frame for tracking Shift key
     local modifierWatcher = CreateFrame("Frame")
     modifierWatcher:RegisterEvent("MODIFIER_STATE_CHANGED")
     modifierWatcher:SetScript("OnEvent", function(_, event, key)
@@ -29,7 +29,7 @@ function CreateItemFrame(name, parent, num_item_frames, frame_width, click_callb
     ItemFrame.items = {}
     ItemFrame.scroll_pos = 1
 
-    -- Инициализация фрейма
+    -- Frame initialization
     local function initialize()
         ItemFrame:SetWidth(ItemFrame.frame_width)
         ItemFrame:SetHeight(ItemFrame.num_item_frames * ItemFrame.item_height)
@@ -62,7 +62,7 @@ function CreateItemFrame(name, parent, num_item_frames, frame_width, click_callb
         end
     end
 
-    -- Обновление отображения предметов
+    -- Update item display
     function ItemFrame:update()
         for i = 1, ItemFrame.num_item_frames do
             local item_index = ItemFrame.scroll_pos + i - 1
@@ -92,7 +92,6 @@ function CreateItemFrame(name, parent, num_item_frames, frame_width, click_callb
                     -- TSM Integration: Set current item ID for money formatting hooks
                     if IsShiftKeyDown() then
                         _G.LootLogCurrentItemID = itemId
-                        print("LootLog: Set current item ID to", itemId, "for TSM integration")
                     end
 
                     -- Show tooltip with proper quantity for TSM integration
@@ -103,7 +102,6 @@ function CreateItemFrame(name, parent, num_item_frames, frame_width, click_callb
                         else
                             GameTooltip:SetHyperlink(link, count)
                         end
-                        print("LootLog: Showing tooltip for item", itemId, "with count", count)
                     else
                         GameTooltip:SetHyperlink(link)
                     end
@@ -129,7 +127,7 @@ function CreateItemFrame(name, parent, num_item_frames, frame_width, click_callb
         end
     end
 
-    -- Прокрутка вверх
+    -- Scroll up
     function ItemFrame:scroll_up()
         if ItemFrame.scroll_pos > 1 then
             ItemFrame.scroll_pos = ItemFrame.scroll_pos - 1
@@ -137,7 +135,7 @@ function CreateItemFrame(name, parent, num_item_frames, frame_width, click_callb
         end
     end
 
-    -- Прокрутка вниз
+    -- Scroll down
     function ItemFrame:scroll_down()
         if ItemFrame.scroll_pos < #ItemFrame.items - ItemFrame.num_item_frames + 1 then
             ItemFrame.scroll_pos = ItemFrame.scroll_pos + 1
@@ -145,14 +143,14 @@ function CreateItemFrame(name, parent, num_item_frames, frame_width, click_callb
         end
     end
 
-    -- Установка списка предметов
+    -- Set item list
     function ItemFrame:set_items(items)
         ItemFrame.items = items or {}
         ItemFrame.scroll_pos = 1
         ItemFrame:update()
     end
 
-    -- Методы для совместимости с LootLog
+    -- Methods for LootLog compatibility
     function ItemFrame:SetItems(items)
         return ItemFrame:set_items(items)
     end
@@ -161,10 +159,8 @@ function CreateItemFrame(name, parent, num_item_frames, frame_width, click_callb
         return #ItemFrame.items
     end
 
-    -- Получение количества предметов
-    function ItemFrame:get_item_count()
-        return #ItemFrame.items
-    end
+    -- Alias for compatibility
+    ItemFrame.get_item_count = ItemFrame.GetNumItems
 
     initialize()
     return ItemFrame

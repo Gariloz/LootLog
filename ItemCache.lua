@@ -12,6 +12,11 @@ ItemCache.queue = {}
 ItemCache.cache = {}
 ItemCache.event_frame = nil
 
+-- Helper function to normalize item ID
+local function normalize_item_id(item_id)
+    return type(item_id) == "string" and tonumber(item_id) or item_id
+end
+
 function ItemCache.new()
     local itemCache = {}
     setmetatable(itemCache, ItemCache)
@@ -25,7 +30,7 @@ function ItemCache.new()
 end
 
 function ItemCache:getAsync(item_id, callback_func)
-    local item_id = type(item_id) == "string" and tonumber(item_id) or item_id
+    item_id = normalize_item_id(item_id)
 
     if self.cache[item_id] then
         callback_func(self.cache[item_id])
@@ -43,8 +48,7 @@ function ItemCache:getAsync(item_id, callback_func)
 end
 
 function ItemCache:get(item_id)
-    local item_id = type(item_id) == "string" and tonumber(item_id) or item_id
-
+    item_id = normalize_item_id(item_id)
     return self.cache[item_id]
 end
 
@@ -53,7 +57,7 @@ function ItemCache:loaded()
 end
 
 function ItemCache:event(item_id, success)
-    local item_id = type(item_id) == "string" and tonumber(item_id) or item_id
+    item_id = normalize_item_id(item_id)
 
     -- check if the item that triggered the event is available
     if self.queue[item_id] then
