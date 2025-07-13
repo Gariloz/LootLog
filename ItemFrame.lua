@@ -1,14 +1,9 @@
--- --------------------------------------------------------------------------------
--- Create a frame designed for showing items in a scrollable list.
--- Compatible with WoW 3.3.5a
--- Parameters:
---   name               Global name of the frame
---   parent             Parent frame object for placement within other frames
---   num_item_frames    Number of items that can be simultaneously shown
---   frame_width        Width of the frame in pixel (minimum: 100)
---   click_callback     Callback function for clicks on items: <func>(button, item)
--- Returns the created frame that is derived from Frame
--- --------------------------------------------------------------------------------
+-- ItemFrame.lua
+-- Создает фрейм для отображения предметов в LootLog
+
+local ItemFrame = {}
+
+-- Создает фрейм для отображения списка предметов
 function CreateItemFrame(name, parent, num_item_frames, frame_width, click_callback)
     -- Таблица для хранения кнопок предметов
     local tooltipButtons = setmetatable({}, {__mode = "k"})
@@ -27,17 +22,9 @@ function CreateItemFrame(name, parent, num_item_frames, frame_width, click_callb
     end)
 
     local ItemFrame = CreateFrame("Frame", name, parent)
-
-    -- Настройки
     ItemFrame.num_item_frames = num_item_frames
-    ItemFrame.frame_width = math.max(100, frame_width)
+    ItemFrame.frame_width = frame_width
     ItemFrame.item_height = 20
-
-    -- Колбэк на клик
-    ItemFrame.click_callback = click_callback
-
-    -- Хранилище элементов
-    ItemFrame.background = {}
     ItemFrame.item_lines = {}
     ItemFrame.items = {}
     ItemFrame.scroll_pos = 1
@@ -73,150 +60,112 @@ function CreateItemFrame(name, parent, num_item_frames, frame_width, click_callb
 
             table.insert(ItemFrame.item_lines, item_line)
         end
-
-        ItemFrame.ScrollFrame = CreateFrame("ScrollFrame", name .. "ScrollFrame", ItemFrame, "FauxScrollFrameTemplate")
-        ItemFrame.ScrollFrame:SetWidth(ItemFrame.frame_width - 22)
-        ItemFrame.ScrollFrame:SetHeight(ItemFrame.num_item_frames * ItemFrame.item_height)
-        ItemFrame.ScrollFrame:SetPoint("TOPLEFT", 0, 0)
     end
 
-    initialize()
+    -- Обновление отображения предметов
+    function ItemFrame:update()
+        for i = 1, ItemFrame.num_item_frames do
+            local item_index = ItemFrame.scroll_pos + i - 1
+            local item = ItemFrame.items[item_index]
 
--- Обновление списка
-local update = function()
-    local max_scroll_pos = math.max(1, #ItemFrame.items - ItemFrame.num_item_frames + 1)
-    if ItemFrame.scroll_pos > max_scroll_pos then
-        ItemFrame.scroll_pos = max_scroll_pos
-    end
+            if item then
+                ItemFrame.item_lines[i]:Show()
+                ItemFrame.item_lines[i].name:SetText(item.name .. " x" .. item.amount)
+                ItemFrame.item_lines[i].icon:SetTexture(GetItemIcon(item.id))
 
-    FauxScrollFrame_Update(ItemFrame.ScrollFrame, #ItemFrame.items, ItemFrame.num_item_frames, ItemFrame.item_height)
+                ItemFrame.item_lines[i].icon_btn:SetAttribute("type", "item")
+                ItemFrame.item_lines[i].icon_btn:SetAttribute("item", item.id)
 
-    for i = 1, ItemFrame.num_item_frames do
-        local index = ItemFrame.scroll_pos - 1 + i
-        if index <= #ItemFrame.items then
-            local item = ItemFrame.items[index]
+                ItemFrame.item_lines[i].icon_btn:SetScript("OnEnter", function(self)
+                    tooltipButtons[self] = true
 
-            local item_color = {GetItemQualityColor(item.quality)}
+                    GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
+                    GameTooltip:ClearLines()
 
-            ItemFrame.item_lines[i].icon:SetTexture(GetItemIcon(item.id))
+                    local itemId = self:GetAttribute("item")
+                    if not itemId then return end
 
-            ItemFrame.item_lines[i].icon_btn:SetAttribute("type", "item")
-            ItemFrame.item_lines[i].icon_btn:SetAttribute("item", item.id)
+                    local count = item.amount or 1
+                    local link = "item:" .. itemId .. ":0:0:0"
+                    local itemString = "item:" .. itemId
 
-            ItemFrame.item_lines[i].icon_btn:SetScript("OnEnter", function(self)
-                GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
-                GameTooltip:ClearLines()
+                    -- TSM Integration: Set current item ID for money formatting hooks
+                    if IsShiftKeyDown() then
+                        _G.LootLogCurrentItemID = itemId
+                        print("LootLog: Set current item ID to", itemId, "for TSM integration")
+                    end
 
-                local itemId = self:GetAttribute("item")
-                if not itemId then return end
-
-                local count = item.amount or 1
-                local link = "item:" .. itemId .. ":0:0:0"
-
-                if IsShiftKeyDown() and count > 1 then
-                    if GameTooltip.SetItemByID then
-                        GameTooltip:SetItemByID(itemId, count)
+                    -- Show tooltip with proper quantity for TSM integration
+                    if IsShiftKeyDown() then
+                        -- Always pass the count when Shift is held, regardless of amount
+                        if GameTooltip.SetItemByID then
+                            GameTooltip:SetItemByID(itemId, count)
+                        else
+                            GameTooltip:SetHyperlink(link, count)
+                        end
+                        print("LootLog: Showing tooltip for item", itemId, "with count", count)
                     else
-                        GameTooltip:SetHyperlink(link, count)
-                    end
-                else
-                    GameTooltip:SetHyperlink(link)
-                end
-
-                -- TSM integration: temporarily modify item count functions for this tooltip
-                if IsShiftKeyDown() and count > 1 then
-                    local originalGetItemCount = _G.GetItemCount
-                    local originalGetContainerItemInfo = _G.GetContainerItemInfo
-
-                    -- Override GetItemCount
-                    if originalGetItemCount then
-                        _G.GetItemCount = function(item, includeBank)
-                            if item == itemId then
-                                return count
-                            end
-                            return originalGetItemCount(item, includeBank)
-                        end
+                        GameTooltip:SetHyperlink(link)
                     end
 
-                    -- Override GetContainerItemInfo
-                    if originalGetContainerItemInfo then
-                        _G.GetContainerItemInfo = function(bag, slot)
-                            local texture, quantity, locked, quality, readable, lootable, itemLink = originalGetContainerItemInfo(bag, slot)
-                            if itemLink then
-                                local linkItemId = tonumber(string.match(itemLink, "item:(%d+)"))
-                                if linkItemId == itemId then
-                                    return texture, count, locked, quality, readable, lootable, itemLink
-                                end
-                            end
-                            return texture, quantity, locked, quality, readable, lootable, itemLink
-                        end
-                    end
+                    GameTooltip:Show()
+                end)
 
-                    -- Restore original functions after a short delay
-                    C_Timer.After(0.1, function()
-                        if originalGetItemCount then
-                            _G.GetItemCount = originalGetItemCount
-                        end
-                        if originalGetContainerItemInfo then
-                            _G.GetContainerItemInfo = originalGetContainerItemInfo
-                        end
-                    end)
-                end
+                ItemFrame.item_lines[i].icon_btn:SetScript("OnLeave", function(self)
+                    tooltipButtons[self] = nil
+                    _G.LootLogCurrentItemID = nil  -- Clear current item ID
+                    GameTooltip:Hide()
+                end)
 
-                GameTooltip:Show()
-            end)
-
-            ItemFrame.item_lines[i].icon_btn:SetScript("OnLeave", function()
-                GameTooltip:Hide()
-            end)
-
-            ItemFrame.item_lines[i].icon_btn:SetScript("OnMouseUp", function(self, button)
-                click_callback(button, self:GetAttribute("item"))
-                GameTooltip:Hide()
-                GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
-                GameTooltip:Show()
-            end)
-
-            ItemFrame.item_lines[i].name:SetTextColor(unpack(item_color))
-            ItemFrame.item_lines[i].name:SetText(item.name .. " x" .. (item.amount or 1))
-
-            tooltipButtons[ItemFrame.item_lines[i].icon_btn] = true
-            ItemFrame.item_lines[i]:Show()
-        else
-            ItemFrame.item_lines[i]:Hide()
+                ItemFrame.item_lines[i].icon_btn:SetScript("OnMouseUp", function(self, button)
+                    click_callback(button, self:GetAttribute("item"))
+                    GameTooltip:Hide()
+                    GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
+                    GameTooltip:Show()
+                end)
+            else
+                ItemFrame.item_lines[i]:Hide()
+            end
         end
     end
-end
 
-    function ItemFrame:GetFrameSize()
-        return ItemFrame.frame_width, ItemFrame.num_item_frames * ItemFrame.item_height
+    -- Прокрутка вверх
+    function ItemFrame:scroll_up()
+        if ItemFrame.scroll_pos > 1 then
+            ItemFrame.scroll_pos = ItemFrame.scroll_pos - 1
+            ItemFrame:update()
+        end
+    end
+
+    -- Прокрутка вниз
+    function ItemFrame:scroll_down()
+        if ItemFrame.scroll_pos < #ItemFrame.items - ItemFrame.num_item_frames + 1 then
+            ItemFrame.scroll_pos = ItemFrame.scroll_pos + 1
+            ItemFrame:update()
+        end
+    end
+
+    -- Установка списка предметов
+    function ItemFrame:set_items(items)
+        ItemFrame.items = items or {}
+        ItemFrame.scroll_pos = 1
+        ItemFrame:update()
+    end
+
+    -- Методы для совместимости с LootLog
+    function ItemFrame:SetItems(items)
+        return ItemFrame:set_items(items)
     end
 
     function ItemFrame:GetNumItems()
         return #ItemFrame.items
     end
 
-    function ItemFrame:ClearItems()
-        for i = #ItemFrame.items, 1, -1 do
-            table.remove(ItemFrame.items, i)
-        end
-        update()
+    -- Получение количества предметов
+    function ItemFrame:get_item_count()
+        return #ItemFrame.items
     end
 
-    function ItemFrame:SetItems(items)
-        ItemFrame.items = items
-        update()
-    end
-
-    local function update_scroll()
-        FauxScrollFrame_Update(ItemFrame.ScrollFrame, #ItemFrame.items, ItemFrame.num_item_frames, ItemFrame.item_height)
-        ItemFrame.scroll_pos = FauxScrollFrame_GetOffset(ItemFrame.ScrollFrame) + 1
-        update()
-    end
-
-    ItemFrame.ScrollFrame:SetScript("OnVerticalScroll", function(_, offset)
-        FauxScrollFrame_OnVerticalScroll(ItemFrame.ScrollFrame, offset, ItemFrame.item_height, update_scroll)
-    end)
-
+    initialize()
     return ItemFrame
 end
