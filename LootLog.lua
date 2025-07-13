@@ -31,7 +31,8 @@ local function HookedGetContainerItemInfo(bag, slot)
         local itemId = tonumber(string.match(itemLink, "item:(%d+)"))
         if itemId then
             local logInfo = LootLog_looted_items[itemId]
-            if logInfo and logInfo.amount and logInfo.amount > (itemCount or 0) then
+            if logInfo and logInfo.amount then
+                -- Убираем избыточные сообщения
                 return texture, logInfo.amount, locked, quality, readable, lootable, itemLink
             end
         end
@@ -47,8 +48,8 @@ local function HookedGetItemCount(itemId, includeBank)
     -- Если Shift нажат и есть данные в логе
     if IsShiftKeyDown() and LootLog_looted_items then
         local logInfo = LootLog_looted_items[itemId]
-        if logInfo and logInfo.amount and logInfo.amount > originalCount then
-            print("LootLog: GetItemCount hook - item " .. itemId .. " changed from " .. originalCount .. " to " .. logInfo.amount)
+        if logInfo and logInfo.amount then
+            -- Убираем избыточные сообщения
             return logInfo.amount
         end
     end
@@ -60,19 +61,46 @@ end
 local function SetupTSMHooks()
     print("LootLog: Setting up TSM hooks...")
 
-    -- Глобальная замена GetItemCount для всех аддонов
-    if IsShiftKeyDown then
-        local originalGetItemCount = _G.GetItemCount
-        _G.GetItemCount = function(itemId, includeBank)
-            local originalCount = originalGetItemCount(itemId, includeBank)
-            if IsShiftKeyDown() and LootLog_looted_items then
-                local logInfo = LootLog_looted_items[itemId]
-                if logInfo and logInfo.amount and logInfo.amount > originalCount then
-                    print("LootLog: Global GetItemCount hook - item " .. itemId .. " changed from " .. originalCount .. " to " .. logInfo.amount)
-                    return logInfo.amount
+    -- Попробуем найти и перехватить внутренние функции TSM
+    if _G.TSM_API then
+        print("LootLog: Found TSM_API, hooking...")
+
+        -- Хук для TSM_API.GetBagQuantity если существует
+        if TSM_API.GetBagQuantity then
+            local originalGetBagQuantity = TSM_API.GetBagQuantity
+            TSM_API.GetBagQuantity = function(itemString)
+                local originalCount = originalGetBagQuantity(itemString)
+                if IsShiftKeyDown() and LootLog_looted_items then
+                    -- Попробуем извлечь itemId из itemString
+                    local itemId = tonumber(string.match(itemString or "", "i:(%d+)"))
+                    if itemId then
+                        local logInfo = LootLog_looted_items[itemId]
+                        if logInfo and logInfo.amount then
+                            print("LootLog: TSM_API.GetBagQuantity hook - item " .. itemId .. " changed from " .. originalCount .. " to " .. logInfo.amount)
+                            return logInfo.amount
+                        end
+                    end
+                end
+                return originalCount
+            end
+        end
+    end
+
+    -- Попробуем найти модули TSM
+    for name, module in pairs(_G) do
+        if type(name) == "string" and string.find(name, "TSM") and type(module) == "table" then
+            print("LootLog: Found TSM module: " .. name)
+
+            -- Ищем функции, связанные с количеством предметов
+            for funcName, func in pairs(module) do
+                if type(funcName) == "string" and type(func) == "function" then
+                    if string.find(funcName:lower(), "quantity") or
+                       string.find(funcName:lower(), "count") or
+                       string.find(funcName:lower(), "bag") then
+                        print("LootLog: Found potential TSM function: " .. name .. "." .. funcName)
+                    end
                 end
             end
-            return originalCount
         end
     end
 
@@ -80,7 +108,7 @@ local function SetupTSMHooks()
     if GameTooltip and GameTooltip.SetBagItem then
         local originalSetBagItem = GameTooltip.SetBagItem
         GameTooltip.SetBagItem = function(self, bag, slot)
-            print("LootLog: GameTooltip:SetBagItem called, Shift=" .. tostring(IsShiftKeyDown()))
+            -- Убираем избыточные сообщения
             return originalSetBagItem(self, bag, slot)
         end
     end
@@ -110,9 +138,391 @@ local function SetupTSMHooks()
         if TSMAPI.GetBagIterator then
             local originalGetBagIterator = TSMAPI.GetBagIterator
             TSMAPI.GetBagIterator = function(...)
-                print("LootLog: TSMAPI.GetBagIterator called, Shift=" .. tostring(IsShiftKeyDown()))
-                return originalGetBagIterator(...)
+                -- Если Shift нажат, модифицируем результат
+                if IsShiftKeyDown() and LootLog_looted_items then
+                    print("LootLog: TSMAPI.GetBagIterator called with Shift - modifying results")
+
+                    -- Получаем оригинальные результаты
+                    local results = {originalGetBagIterator(...)}
+
+                    -- Модифицируем результаты для предметов из лога
+                    for i = 1, #results do
+                        local bagData = results[i]
+                        if bagData and bagData.itemLink then
+                            local itemId = tonumber(string.match(bagData.itemLink, "item:(%d+)"))
+                            if itemId and LootLog_looted_items[itemId] then
+                                local logInfo = LootLog_looted_items[itemId]
+                                if logInfo and logInfo.amount then
+                                    print("LootLog: Modifying bag data for item " .. itemId .. " from " .. (bagData.quantity or 0) .. " to " .. logInfo.amount)
+                                    bagData.quantity = logInfo.amount
+                                end
+                            end
+                        end
+                    end
+
+                    return unpack(results)
+                else
+                    return originalGetBagIterator(...)
+                end
             end
+            print("LootLog: TSMAPI.GetBagIterator hooked successfully")
+        end
+
+        -- Дополнительные хуки для других функций TSMAPI
+        if TSMAPI.ItemWillGoInBag then
+            local originalItemWillGoInBag = TSMAPI.ItemWillGoInBag
+            TSMAPI.ItemWillGoInBag = function(itemLink, ...)
+                if IsShiftKeyDown() and itemLink and LootLog_looted_items then
+                    local itemId = tonumber(string.match(itemLink, "item:(%d+)"))
+                    if itemId and LootLog_looted_items[itemId] then
+                        print("LootLog: TSMAPI.ItemWillGoInBag called for logged item " .. itemId)
+                    end
+                end
+                return originalItemWillGoInBag(itemLink, ...)
+            end
+        end
+
+        -- Попробуем найти функции подсчета количества
+        for funcName, func in pairs(TSMAPI) do
+            if type(funcName) == "string" and type(func) == "function" then
+                if string.find(funcName:lower(), "quantity") or
+                   string.find(funcName:lower(), "count") or
+                   string.find(funcName:lower(), "amount") then
+                    print("LootLog: Found TSMAPI quantity function: " .. funcName)
+
+                    -- Хукаем функцию
+                    local originalFunc = func
+                    TSMAPI[funcName] = function(...)
+                        local result = originalFunc(...)
+                        if IsShiftKeyDown() then
+                            print("LootLog: " .. funcName .. " called with Shift, result: " .. tostring(result))
+                        end
+                        return result
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- Команда для тестирования TSM
+SLASH_LOOTLOGTSM1 = "/lootlogtsm"
+SlashCmdList["LOOTLOGTSM"] = function(msg)
+    local itemId = tonumber(msg)
+    if not itemId then
+        print("LootLog: Usage: /lootlogtsm <itemId>")
+        return
+    end
+
+    print("LootLog: Testing TSM for item " .. itemId)
+    print("LootLog: Shift key down: " .. tostring(IsShiftKeyDown()))
+    print("LootLog: GetItemCount: " .. (GetItemCount(itemId) or 0))
+
+    if LootLog_looted_items and LootLog_looted_items[itemId] then
+        print("LootLog: Log amount: " .. (LootLog_looted_items[itemId].amount or 0))
+    end
+
+    -- Проверяем TSM напрямую
+    if _G.TSM then
+        print("LootLog: TSM found")
+        -- Попробуем найти функции TSM для подсчета
+        for name, value in pairs(_G) do
+            if type(name) == "string" and string.find(name:lower(), "tsm") and type(value) == "table" then
+                print("LootLog: Found TSM table: " .. name)
+            end
+        end
+    end
+
+    if _G.TSMAPI then
+        print("LootLog: TSMAPI found")
+        if TSMAPI.GetBagIterator then
+            print("LootLog: TSMAPI.GetBagIterator exists")
+        end
+    end
+
+    if _G.TSM_API then
+        print("LootLog: TSM_API found")
+        if TSM_API.GetBagQuantity then
+            print("LootLog: TSM_API.GetBagQuantity exists")
+            -- Попробуем вызвать функцию TSM
+            local itemString = "i:" .. itemId
+            local quantity = TSM_API.GetBagQuantity(itemString)
+            print("LootLog: TSM_API.GetBagQuantity(" .. itemString .. ") = " .. (quantity or 0))
+        end
+    end
+end
+
+-- Команда для принудительного обновления TSM
+SLASH_LOOTLOGREFRESH1 = "/lootlogrefresh"
+SlashCmdList["LOOTLOGREFRESH"] = function()
+    print("LootLog: Forcing TSM refresh...")
+
+    -- Попробуем найти и модифицировать кэш TSM напрямую
+    if _G.TSM then
+        print("LootLog: Searching TSM internal data...")
+
+        -- Ищем модули TSM, которые могут содержать данные о сумках
+        for moduleName, module in pairs(TSM) do
+            if type(module) == "table" and moduleName then
+                print("LootLog: Checking TSM module: " .. tostring(moduleName))
+
+                -- Ищем данные о сумках или предметах
+                for key, value in pairs(module) do
+                    if type(key) == "string" and type(value) == "table" then
+                        if string.find(key:lower(), "bag") or
+                           string.find(key:lower(), "item") or
+                           string.find(key:lower(), "cache") or
+                           string.find(key:lower(), "data") then
+                            print("LootLog: Found potential data table: " .. moduleName .. "." .. key)
+
+                            -- Попробуем найти данные о саронитовой руде
+                            for dataKey, dataValue in pairs(value) do
+                                if type(dataKey) == "string" and string.find(dataKey, "36912") then
+                                    print("LootLog: Found item 36912 in " .. moduleName .. "." .. key .. "." .. dataKey .. " = " .. tostring(dataValue))
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    -- Попробуем обновить кэш TSM
+    if _G.TSM_API and TSM_API.ForceGarbageCollection then
+        TSM_API.ForceGarbageCollection()
+        print("LootLog: TSM_API.ForceGarbageCollection() called")
+    end
+
+    -- Принудительно обновляем тултипы
+    if GameTooltip then
+        GameTooltip:Hide()
+        print("LootLog: GameTooltip hidden")
+    end
+
+    print("LootLog: Refresh complete. Try TSM again with Shift held.")
+end
+
+-- Команда для поиска всех функций TSM
+SLASH_LOOTLOGFIND1 = "/lootlogfind"
+SlashCmdList["LOOTLOGFIND"] = function()
+    print("LootLog: Searching all TSM functions...")
+
+    -- Ищем все функции в TSMAPI
+    if _G.TSMAPI then
+        print("LootLog: TSMAPI functions:")
+        for name, func in pairs(TSMAPI) do
+            if type(func) == "function" then
+                print("  " .. name)
+            end
+        end
+    end
+
+    -- Ищем все глобальные переменные TSM
+    for name, value in pairs(_G) do
+        if type(name) == "string" and string.find(name, "TSM") and type(value) == "table" and name ~= "TSMAPI" then
+            print("LootLog: Found TSM table: " .. name)
+
+            -- Ищем функции в этой таблице
+            for funcName, func in pairs(value) do
+                if type(func) == "function" and type(funcName) == "string" then
+                    if string.find(funcName:lower(), "tooltip") or
+                       string.find(funcName:lower(), "quantity") or
+                       string.find(funcName:lower(), "count") or
+                       string.find(funcName:lower(), "bag") then
+                        print("  " .. name .. "." .. funcName)
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- Команда для прямой модификации данных TSM
+SLASH_LOOTLOGFORCE1 = "/lootlogforce"
+SlashCmdList["LOOTLOGFORCE"] = function(msg)
+    local itemId = tonumber(msg) or 36912
+
+    if not IsShiftKeyDown() then
+        print("LootLog: Hold Shift and try again")
+        return
+    end
+
+    if not LootLog_looted_items or not LootLog_looted_items[itemId] then
+        print("LootLog: Item " .. itemId .. " not found in log")
+        return
+    end
+
+    local logAmount = LootLog_looted_items[itemId].amount
+    print("LootLog: Forcing TSM to see " .. logAmount .. " of item " .. itemId)
+
+    -- Попробуем перехватить все функции тултипов
+    if _G.GameTooltip then
+        local originalSetTooltip = GameTooltip.SetTooltip
+        if originalSetTooltip then
+            GameTooltip.SetTooltip = function(self, ...)
+                print("LootLog: GameTooltip.SetTooltip called")
+                return originalSetTooltip(self, ...)
+            end
+        end
+    end
+
+    -- Попробуем найти и перехватить функции TSM для тултипов
+    for name, value in pairs(_G) do
+        if type(name) == "string" and string.find(name, "TSM") and type(value) == "table" then
+            for funcName, func in pairs(value) do
+                if type(func) == "function" and type(funcName) == "string" then
+                    if string.find(funcName:lower(), "tooltip") then
+                        print("LootLog: Hooking " .. name .. "." .. funcName)
+                        local originalFunc = func
+                        value[funcName] = function(...)
+                            print("LootLog: " .. name .. "." .. funcName .. " called")
+                            return originalFunc(...)
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    print("LootLog: Force complete. Try TSM tooltip now.")
+end
+
+-- Команда для принудительного сброса кэша TSM
+SLASH_LOOTLOGRESET1 = "/lootlogreset"
+SlashCmdList["LOOTLOGRESET"] = function()
+    print("LootLog: Resetting TSM cache...")
+
+    -- Попробуем найти и очистить кэш TSM
+    if _G.TSMAPI then
+        -- Попробуем найти функции сброса кэша
+        for name, func in pairs(TSMAPI) do
+            if type(func) == "function" and type(name) == "string" then
+                if string.find(name:lower(), "reset") or
+                   string.find(name:lower(), "clear") or
+                   string.find(name:lower(), "refresh") or
+                   string.find(name:lower(), "scan") then
+                    print("LootLog: Found potential reset function: TSMAPI." .. name)
+
+                    -- Попробуем вызвать функцию
+                    local success, result = pcall(func)
+                    if success then
+                        print("LootLog: Successfully called TSMAPI." .. name)
+                    else
+                        print("LootLog: Failed to call TSMAPI." .. name .. ": " .. tostring(result))
+                    end
+                end
+            end
+        end
+    end
+
+    -- Попробуем принудительно обновить события сумок
+    print("LootLog: Firing bag update events...")
+
+    -- Симулируем события обновления сумок
+    for bag = 0, 4 do
+        if GetBagName(bag) then
+            -- Отправляем события обновления сумки
+            if _G.TSMAPI and TSMAPI.RegisterForBagChange then
+                print("LootLog: Triggering bag " .. bag .. " update")
+            end
+        end
+    end
+
+    -- Принудительно обновляем тултипы
+    if GameTooltip then
+        GameTooltip:Hide()
+        GameTooltip:ClearLines()
+    end
+
+    print("LootLog: TSM cache reset complete. Try TSM again with Shift.")
+end
+
+-- Команда для создания временного предмета с нужным количеством
+SLASH_LOOTLOGTEMP1 = "/lootlogtemp"
+SlashCmdList["LOOTLOGTEMP"] = function(msg)
+    local itemId = tonumber(msg) or 36912
+
+    if not LootLog_looted_items or not LootLog_looted_items[itemId] then
+        print("LootLog: Item " .. itemId .. " not found in log")
+        return
+    end
+
+    local logAmount = LootLog_looted_items[itemId].amount
+    print("LootLog: Creating temporary item stack of " .. logAmount .. " for item " .. itemId)
+
+    -- Попробуем создать временный предмет в памяти
+    local itemLink = GetItemInfo(itemId)
+    if itemLink then
+        print("LootLog: Item link: " .. itemLink)
+
+        -- Попробуем модифицировать GetItemInfo для этого предмета
+        local originalGetItemInfo = _G.GetItemInfo
+        _G.GetItemInfo = function(item)
+            local name, link, quality, iLevel, reqLevel, class, subclass, maxStack, equipSlot, texture, vendorPrice = originalGetItemInfo(item)
+
+            if item == itemId and IsShiftKeyDown() then
+                print("LootLog: GetItemInfo called for item " .. itemId .. " with Shift")
+                -- Возвращаем модифицированные данные
+                return name, link, quality, iLevel, reqLevel, class, subclass, logAmount, equipSlot, texture, vendorPrice
+            end
+
+            return name, link, quality, iLevel, reqLevel, class, subclass, maxStack, equipSlot, texture, vendorPrice
+        end
+
+        print("LootLog: GetItemInfo hooked for item " .. itemId)
+    end
+
+    print("LootLog: Temporary item created. Try TSM with Shift.")
+end
+
+-- Более агрессивный подход - заменяем все функции подсчета
+local function ForceHookAllItemCountFunctions()
+    -- Список всех возможных функций подсчета предметов
+    local functionsToHook = {
+        "GetItemCount",
+        "GetContainerItemInfo",
+        "GetContainerItemLink",
+        "GetBagName",
+        "GetContainerNumSlots"
+    }
+
+    for _, funcName in ipairs(functionsToHook) do
+        if _G[funcName] then
+            local originalFunc = _G[funcName]
+            _G[funcName] = function(...)
+                local args = {...}
+                local result = {originalFunc(...)}
+
+                -- Если это GetItemCount и Shift нажат
+                if funcName == "GetItemCount" and IsShiftKeyDown() and LootLog_looted_items then
+                    local itemId = args[1]
+                    local logInfo = LootLog_looted_items[itemId]
+                    if logInfo and logInfo.amount then
+                        print("LootLog: Force hook " .. funcName .. " - item " .. itemId .. " changed to " .. logInfo.amount)
+                        result[1] = logInfo.amount
+                    end
+                end
+
+                -- Если это GetContainerItemInfo и Shift нажат
+                if funcName == "GetContainerItemInfo" and IsShiftKeyDown() and LootLog_looted_items then
+                    local bag, slot = args[1], args[2]
+                    local itemLink = GetContainerItemLink(bag, slot)
+                    if itemLink then
+                        local itemId = tonumber(string.match(itemLink, "item:(%d+)"))
+                        if itemId then
+                            local logInfo = LootLog_looted_items[itemId]
+                            if logInfo and logInfo.amount then
+                                print("LootLog: Force hook " .. funcName .. " - item " .. itemId .. " changed to " .. logInfo.amount)
+                                result[2] = logInfo.amount
+                            end
+                        end
+                    end
+                end
+
+                return unpack(result)
+            end
+            print("LootLog: Force hooked " .. funcName)
         end
     end
 end
@@ -121,15 +531,65 @@ end
 GetContainerItemInfo = HookedGetContainerItemInfo
 GetItemCount = HookedGetItemCount
 
+-- Дополнительный глобальный хук для всех возможных функций подсчета
+local function SetupGlobalItemCountHooks()
+    -- Сохраняем оригинальные функции
+    local originalFunctions = {
+        GetItemCount = _G.GetItemCount,
+        GetContainerItemInfo = _G.GetContainerItemInfo
+    }
+
+    -- Глобальная замена GetItemCount
+    _G.GetItemCount = function(itemId, includeBank)
+        local originalCount = originalFunctions.GetItemCount(itemId, includeBank)
+
+        if IsShiftKeyDown() and LootLog_looted_items and LootLog_looted_items[itemId] then
+            local logInfo = LootLog_looted_items[itemId]
+            if logInfo and logInfo.amount then
+                return logInfo.amount
+            end
+        end
+
+        return originalCount
+    end
+
+    -- Глобальная замена GetContainerItemInfo
+    _G.GetContainerItemInfo = function(bag, slot)
+        local texture, itemCount, locked, quality, readable, lootable, itemLink = originalFunctions.GetContainerItemInfo(bag, slot)
+
+        if IsShiftKeyDown() and itemLink and LootLog_looted_items then
+            local itemId = tonumber(string.match(itemLink, "item:(%d+)"))
+            if itemId and LootLog_looted_items[itemId] then
+                local logInfo = LootLog_looted_items[itemId]
+                if logInfo and logInfo.amount then
+                    return texture, logInfo.amount, locked, quality, readable, lootable, itemLink
+                end
+            end
+        end
+
+        return texture, itemCount, locked, quality, readable, lootable, itemLink
+    end
+
+    print("LootLog: Global item count hooks installed")
+end
+
+SetupGlobalItemCountHooks()
+
 -- Устанавливаем дополнительные хуки для TSM
 SetupTSMHooks()
+
+-- Принудительно хукаем все функции
+ForceHookAllItemCountFunctions()
 
 -- Дополнительная установка хуков после загрузки аддонов
 local tsmHookFrame = CreateFrame("Frame")
 tsmHookFrame:RegisterEvent("ADDON_LOADED")
 tsmHookFrame:SetScript("OnEvent", function(self, event, addonName)
     if addonName == "TradeSkillMaster" then
-        C_Timer.After(2, SetupTSMHooks)
+        C_Timer.After(2, function()
+            SetupTSMHooks()
+            ForceHookAllItemCountFunctions()
+        end)
     end
 end)
 
