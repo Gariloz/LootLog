@@ -1,7 +1,7 @@
 ## Interface: 30300
 ## Title: Loot Log
 ## Notes: Logs looted items of certain quality in raids.
-## Version: 1.4
+## Version: 1.5.0
 ## SavedVariables: LootLog_minimap
 ## SavedVariablesPerCharacter: LootLog_loot_index, LootLog_filter_index, LootLog_looted_items, LootLog_frame_visible, LootLog_source, LootLog_min_quality, LootLog_invertsorting, LootLog_equippable, LootLog_open_on_loot, LootLog_filter_list, LootLog_use_filter_list
 

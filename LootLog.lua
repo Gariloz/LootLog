@@ -1,3 +1,4 @@
+-- LootLog Addon v1.5.0 - TSM Integration
 -- user settings
 local window_width = 200
 local num_items = 15
