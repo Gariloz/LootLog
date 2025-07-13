@@ -123,6 +123,46 @@ local update = function()
                     GameTooltip:SetHyperlink(link)
                 end
 
+                -- TSM integration: temporarily modify item count functions for this tooltip
+                if IsShiftKeyDown() and count > 1 then
+                    local originalGetItemCount = _G.GetItemCount
+                    local originalGetContainerItemInfo = _G.GetContainerItemInfo
+
+                    -- Override GetItemCount
+                    if originalGetItemCount then
+                        _G.GetItemCount = function(item, includeBank)
+                            if item == itemId then
+                                return count
+                            end
+                            return originalGetItemCount(item, includeBank)
+                        end
+                    end
+
+                    -- Override GetContainerItemInfo
+                    if originalGetContainerItemInfo then
+                        _G.GetContainerItemInfo = function(bag, slot)
+                            local texture, quantity, locked, quality, readable, lootable, itemLink = originalGetContainerItemInfo(bag, slot)
+                            if itemLink then
+                                local linkItemId = tonumber(string.match(itemLink, "item:(%d+)"))
+                                if linkItemId == itemId then
+                                    return texture, count, locked, quality, readable, lootable, itemLink
+                                end
+                            end
+                            return texture, quantity, locked, quality, readable, lootable, itemLink
+                        end
+                    end
+
+                    -- Restore original functions after a short delay
+                    C_Timer.After(0.1, function()
+                        if originalGetItemCount then
+                            _G.GetItemCount = originalGetItemCount
+                        end
+                        if originalGetContainerItemInfo then
+                            _G.GetContainerItemInfo = originalGetContainerItemInfo
+                        end
+                    end)
+                end
+
                 GameTooltip:Show()
             end)
 

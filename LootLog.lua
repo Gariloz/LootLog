@@ -499,7 +499,6 @@ local function ForceHookAllItemCountFunctions()
                     local itemId = args[1]
                     local logInfo = LootLog_looted_items[itemId]
                     if logInfo and logInfo.amount then
-                        print("LootLog: Force hook " .. funcName .. " - item " .. itemId .. " changed to " .. logInfo.amount)
                         result[1] = logInfo.amount
                     end
                 end
@@ -513,7 +512,6 @@ local function ForceHookAllItemCountFunctions()
                         if itemId then
                             local logInfo = LootLog_looted_items[itemId]
                             if logInfo and logInfo.amount then
-                                print("LootLog: Force hook " .. funcName .. " - item " .. itemId .. " changed to " .. logInfo.amount)
                                 result[2] = logInfo.amount
                             end
                         end
