@@ -2,6 +2,8 @@
 
 LootLog is a comprehensive loot tracking addon for World of Warcraft 3.3.5a that records and displays all items you've looted during your adventures.
 
+**🎯 Latest Version: v1.5.0 with full TSM Integration!**
+
 ## Features
 
 ### Core Functionality
